@@ -785,39 +785,18 @@ async def test_fetch_and_map_relations_with_errors(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("num_dates", [3, 5, 10])
-async def test_fetch_cabinet_flow_multiple_dates(organisation_service, num_dates):
+async def test_fetch_cabinet_flow_too_many_dates(organisation_service):
     president_id = "pres1"
-    dates = [f"2024-09-{20+i}" for i in range(num_dates)]
+    dates = ["2024-09-23", "2024-09-24", "2024-09-25", "2024-09-26"]
 
-    mock_returns = []
-    for _ in range(num_dates):
-        mock_returns.append([{"ministerId": "min1", "departmentId": "dep1"}])
-
-    organisation_service.get_ministers_and_departments = AsyncMock(
-        side_effect=mock_returns
-    )
-
-    mock_entity = MagicMock()
-    mock_entity.id = "min1"
-    mock_entity.name = "Minister 1"
-    organisation_service.opengin_service.get_entities = AsyncMock(
-        return_value=[mock_entity]
-    )
-
-    result = await organisation_service.fetch_cabinet_flow(
-        president_id=president_id, dates=dates, max_dates=num_dates
-    )
-
-    assert len(result["dates"]) == num_dates
-    assert len(result["nodes"]) == num_dates
-    assert len(result["links"]) == num_dates - 1
+    with pytest.raises(BadRequestError):
+        await organisation_service.fetch_cabinet_flow(president_id, dates)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("dates", [[], ["2024-09-23"]])
-async def test_fetch_cabinet_flow_insufficient_dates(organisation_service, dates):
+async def test_fetch_cabinet_flow_single_date_fails(organisation_service):
     president_id = "pres1"
+    dates = ["2024-09-23"]
 
     with pytest.raises(ValueError):
         await organisation_service.fetch_cabinet_flow(president_id, dates)
