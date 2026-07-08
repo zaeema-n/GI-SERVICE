@@ -495,6 +495,10 @@ class OrganisationService:
                 {"date": "<date>", "status": "<status>", "departmentsCount": <count>}
             ]
         }
+
+        Only dates with status "ok" contribute to nodes and links. Dates with
+        status "no_data" (departmentsCount 0) or "error" are excluded from the
+        chart; consecutive included dates are linked directly across skipped dates.
         """
         
         if len(dates) > max_dates:
@@ -510,12 +514,11 @@ class OrganisationService:
             ]
             dates_gov_struct = await asyncio.gather(*tasks_for_dates, return_exceptions=True)
 
-            departments_by_ministers = {} # maps department_id -> [node_index_at_date0, node_index_at_date1, ...] to track which minister held each department across dates
+            departments_by_ministers = {} # maps department_id -> [node_index_at_chart_slot0, ...] across included dates only
             name_lookup = {} # maps entity_id -> human-readable name, populated after fetching minister names
-            expected_slots = len(dates) # number of dates requested, used to initialise fixed-size timeline slots per department
             nodes: list[dict[str, str]] = [] # list of graph nodes, each representing a minister at a specific date e.g. {"id": "minister_001", "time": "2015-01-01"}
-            node_indices: dict[tuple[str, int], int] = {} # maps (minister_id, date_index) -> index in `nodes`, avoids duplicate nodes for the same minister at the same date
-            links_departments: dict[tuple[int, int], list[str]] = {} # maps (source_node_index, target_node_index) -> department ids that moved between those two ministers across consecutive dates
+            node_indices: dict[tuple[str, int], int] = {} # maps (minister_id, chart_index) -> index in `nodes`, avoids duplicate nodes for the same minister at the same chart slot
+            links_departments: dict[tuple[int, int], list[str]] = {} # maps (source_node_index, target_node_index) -> department ids that moved between those two ministers across consecutive included dates
             date_status: list[dict[str, object]] = [
                 {"date": d, "status": "pending"} for d in dates
             ] # tracks processing status per date ("pending" -> "ok" / "error" / "no_data") for the response metadata
@@ -551,6 +554,12 @@ class OrganisationService:
                     "departmentsCount": len(result),
                 }
 
+            included_indices = [i for i, s in enumerate(date_status) if s["status"] == "ok"]
+            chart_slot_count = len(included_indices)
+
+            for chart_index, date_index in enumerate(included_indices):
+                result = dates_gov_struct[date_index]
+
                 for relation in result:
                     if not isinstance(relation, dict):
                         continue
@@ -565,8 +574,8 @@ class OrganisationService:
                     # eg: nodes = [{"id": "minister_001", "time": "2015-01-01"}, {"id": "minister_002", "time": "2015-01-01"}]
                     node_index = None
                     if minister_id:
-                        node_key = (minister_id, date_index) # e.g. ("minister_001", 0) — unique key per minister per date
-                        node_index = node_indices.get(node_key) # check if this minister already has a node for this date
+                        node_key = (minister_id, chart_index) # e.g. ("minister_001", 0) — unique key per minister per chart slot
+                        node_index = node_indices.get(node_key) # check if this minister already has a node for this chart slot
                         if node_index is None:
                             node_index = len(nodes)
                             node_indices[node_key] = node_index
@@ -575,17 +584,17 @@ class OrganisationService:
                                 "time": dates[date_index]
                             })
 
-                    # For each department, maintain a "timeline" across requested dates.
-                    # departments_by_ministers[department_id] = [node_index_at_date0, node_index_at_date1, ...]
-                    # Each node_index points into `nodes` (which is keyed by (minister_id, date_index)).
-                    timeline = departments_by_ministers.get(department_id)  # reuse the same list across dates
+                    # For each department, maintain a "timeline" across included dates.
+                    # departments_by_ministers[department_id] = [node_index_at_chart_slot0, ...]
+                    # Each node_index points into `nodes` (which is keyed by (minister_id, chart_index)).
+                    timeline = departments_by_ministers.get(department_id)  # reuse the same list across chart slots
                     if timeline is None:
-                        timeline = [None] * expected_slots
+                        timeline = [None] * chart_slot_count
                         departments_by_ministers[department_id] = timeline
-                    # Compare consecutive dates for this department to detect a move.
-                    # previous_index is the minister-node at dates[date_index - 1]; node_index is at dates[date_index].
-                    previous_index = timeline[date_index - 1] if date_index > 0 else None
-                    timeline[date_index] = node_index
+                    # Compare consecutive included dates for this department to detect a move.
+                    # previous_index is the minister-node at the prior chart slot; node_index is at chart_index.
+                    previous_index = timeline[chart_index - 1] if chart_index > 0 else None
+                    timeline[chart_index] = node_index
 
                     # Aggregate movements: each department that goes from previous_index -> node_index is added to that link.
                     if previous_index is not None and node_index is not None:
