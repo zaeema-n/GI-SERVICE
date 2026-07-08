@@ -787,7 +787,7 @@ async def test_fetch_and_map_relations_with_errors(
 @pytest.mark.asyncio
 async def test_fetch_cabinet_flow_too_many_dates(organisation_service):
     president_id = "pres1"
-    dates = ["2024-09-23", "2024-09-24", "2024-09-25", "2024-09-26"]
+    dates = [f"2024-09-{day:02d}" for day in range(1, 12)]  # 11 dates; max allowed is 10
 
     with pytest.raises(BadRequestError):
         await organisation_service.fetch_cabinet_flow(president_id, dates)
@@ -879,7 +879,9 @@ async def test_no_departments(organisation_service):
     assert result["nodes"] == []
     assert result["links"] == []
     assert result["dates"][0]["status"] == "no_data"
+    assert result["dates"][0]["departmentsCount"] == 0
     assert result["dates"][1]["status"] == "no_data"
+    assert result["dates"][1]["departmentsCount"] == 0
 
 
 @pytest.mark.asyncio
@@ -933,10 +935,78 @@ async def test_no_departments_for_one_date(organisation_service):
 
     # date statuses should be ok and one date should be no_data
     assert result["dates"][0]["status"] == "ok"
+    assert result["dates"][0]["departmentsCount"] == 4
     assert result["dates"][1]["status"] == "no_data"
+    assert result["dates"][1]["departmentsCount"] == 0
 
     # dependency should be called once per date
     assert organisation_service.get_ministers_and_departments.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_bridge_across_empty_middle_date(organisation_service):
+    organisation_service.get_ministers_and_departments = AsyncMock(
+        side_effect=[
+            [
+                {"ministerId": "min4", "departmentId": "dep177"},
+                {"ministerId": "min4", "departmentId": "dep175"},
+                {"ministerId": "min4", "departmentId": "dep182"},
+                {"ministerId": "min4", "departmentId": "dep176"},
+            ],
+            [],
+            [
+                {"ministerId": "min9", "departmentId": "dep177"},
+                {"ministerId": "min4", "departmentId": "dep175"},
+                {"ministerId": "min4", "departmentId": "dep182"},
+                {"ministerId": "min10", "departmentId": "dep176"},
+            ],
+        ]
+    )
+
+    mock_entity1 = MagicMock()
+    mock_entity1.id = "min4"
+    mock_entity1.name = "Minister 4"
+
+    mock_entity2 = MagicMock()
+    mock_entity2.id = "min9"
+    mock_entity2.name = "Minister 9"
+
+    mock_entity3 = MagicMock()
+    mock_entity3.id = "min10"
+    mock_entity3.name = "Minister 10"
+
+    organisation_service.opengin_service.get_entities = AsyncMock(
+        return_value=[mock_entity1, mock_entity2, mock_entity3]
+    )
+
+    result = await organisation_service.fetch_cabinet_flow(
+        president_id="pres1",
+        dates=["2024-01-01", "2024-02-01", "2024-03-01"],
+    )
+
+    assert result["dates"][0]["status"] == "ok"
+    assert result["dates"][0]["departmentsCount"] == 4
+    assert result["dates"][1]["status"] == "no_data"
+    assert result["dates"][1]["departmentsCount"] == 0
+    assert result["dates"][2]["status"] == "ok"
+    assert result["dates"][2]["departmentsCount"] == 4
+
+    # links bridge across the empty middle date (same as two consecutive ok dates)
+    assert len(result["links"]) == 3
+    total_flow = sum(link["value"] for link in result["links"])
+    assert total_flow == 4
+
+    all_department_ids = {
+        department_id
+        for link in result["links"]
+        for department_id in link["departmentIds"]
+    }
+    assert all_department_ids == {"dep175", "dep176", "dep177", "dep182"}
+
+    node_times = {node["time"] for node in result["nodes"]}
+    assert node_times == {"2024-01-01", "2024-03-01"}
+
+    assert organisation_service.get_ministers_and_departments.call_count == 3
 
 
 @pytest.mark.asyncio
