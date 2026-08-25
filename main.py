@@ -1,4 +1,9 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from src.core import settings, setup_logging
 from src.routers import (
     organisation_router,
     data_router,
@@ -6,16 +11,15 @@ from src.routers import (
     person_router,
     document_router,
 )
-from src.core import settings
-from fastapi.middleware.cors import CORSMiddleware
 from src.middleware import ThrottlingMiddleware
 from src.utils import http_client
 from src.cache import close_cache, connect_cache
-from contextlib import asynccontextmanager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Re-apply after Uvicorn's dictConfig so worker INFO logs still reach stdout.
+    setup_logging()
     # Same lifecycle as HTTP: open shared resources once per worker, close on shutdown
     await http_client.start()
     try:
