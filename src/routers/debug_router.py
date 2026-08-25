@@ -15,7 +15,11 @@ async def dump_cache(
         default="gi:*",
         description="Redis SCAN match pattern",
     ),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int | None = Query(
+        default=None,
+        ge=1,
+        description="Max keys to return. Omit to dump every matching key.",
+    ),
 ):
     if not settings.CACHE_DEBUG:
         raise HTTPException(status_code=404, detail="Not found")

@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 _REDIS_SOFT_ERRORS = (RedisError, ConnectionError, OSError, TimeoutError)
 
 
-def _decode_debug_value(raw: str | None, max_chars: int) -> tuple[Any, bool]:
+def _decode_debug_value(raw: str | None, max_chars: int | None) -> tuple[Any, bool]:
     if raw is None:
         return None, False
-    if len(raw) > max_chars:
+    if max_chars is not None and len(raw) > max_chars:
         return raw[:max_chars], True
     try:
         return json.loads(raw), False
@@ -111,10 +111,14 @@ class RedisCache:
         self,
         *,
         match: str,
-        limit: int,
-        max_value_chars: int = 8_000,
+        limit: int | None = None,
+        max_value_chars: int | None = None,
     ) -> dict[str, Any]:
-        """List keys currently in Redis (for CACHE_DEBUG dumps only)."""
+        """List keys currently in Redis (for CACHE_DEBUG dumps only).
+
+        ``limit=None`` returns every matching key. ``max_value_chars=None``
+        returns full values (payloads can be large).
+        """
         empty: dict[str, Any] = {"count": 0, "truncated": False, "entries": []}
         if self._client is None:
             return {**empty, "error": "Redis client not connected"}
@@ -122,7 +126,7 @@ class RedisCache:
         truncated = False
         try:
             async for key in self._client.scan_iter(match=match, count=100):
-                if len(entries) >= limit:
+                if limit is not None and len(entries) >= limit:
                     truncated = True
                     break
                 ttl = await self._client.ttl(key)
