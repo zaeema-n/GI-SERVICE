@@ -10,6 +10,7 @@ from src.routers import (
     search_router,
     person_router,
     document_router,
+    debug_router,
 )
 from src.middleware import ThrottlingMiddleware
 from src.utils import http_client
@@ -60,3 +61,4 @@ app.include_router(data_router)
 app.include_router(search_router)
 app.include_router(person_router)
 app.include_router(document_router)
+app.include_router(debug_router)

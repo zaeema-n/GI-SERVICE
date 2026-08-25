@@ -3,6 +3,7 @@ from .organisation_router import router as organisation_router
 from .search_router import router as search_router
 from .person_router import router as person_router
 from .document_router import router as document_router
+from .debug_router import router as debug_router
 
 __all__ = [
     "data_router",
@@ -10,4 +11,5 @@ __all__ = [
     "search_router",
     "person_router",
     "document_router",
+    "debug_router",
 ]

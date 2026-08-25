@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     REDIS_POOL_TIMEOUT_SECONDS: float = 5.0
     CACHE_KEY_PREFIX: str = "gi:v1"
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
+    # Temporary inspect endpoint GET /debug/cache. Leave false except while testing.
+    CACHE_DEBUG: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
